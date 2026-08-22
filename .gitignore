@@ -1,0 +1,12 @@
+/logs/
+/results/
+/past_runs/
+/analysis.py
+/inputs.txt
+/joblog.txt
+/launch.sh
+/logs.zip
+/monogenic_beta.sage
+/pull.sh
+/push.sh
+/run_all.sh
