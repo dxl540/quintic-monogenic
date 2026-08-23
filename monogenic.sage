@@ -6,6 +6,7 @@ from sage.all import Primes
 import random
 
 pari.allocatemem(2^32)
+pari.set_real_precision(5000)
 
 R.<x> = PolynomialRing(QQ)
 R2.<x1, x2> = PolynomialRing(QQ, 2)
@@ -22,7 +23,44 @@ def time_check(stage_name, time_list, indents=0):
     this_stage = current_time - last_time
     total_time = current_time - start_time
     # print("\t" * indents + stage_name + f" took {this_stage:.3f} seconds, total {total_time:.3f}")
-    print('        ' * indents + f"{stage_name:<56s}"+ f"{this_stage:12.3f}{total_time:12.3f}")
+    print("\t" * indents + f"{stage_name:<56s}"+ f"{this_stage:12.3f}{total_time:12.3f}")
+
+def pari_polynomial_to_sage(p, K):
+    """
+    Convert a PARI polynomial in the defining generator into K.
+
+    Parameters:
+        p: polynomial in PARI
+        K: number field in Sage
+    
+    Returns:
+        the polynomial in the defining generator of K (as an element of K)
+    """
+    p = pari(p).lift()
+    P = K.polynomial_ring()
+
+    coeffs = [
+        QQ(p.polcoef(i))
+        for i in range(K.degree())
+    ]
+
+    return K(P(coeffs))
+
+def pari_integral_basis_coordinates_to_sage(coords, nf, K):
+    """
+    Convert a PARI coordinate vector relative to an integral basis of nf into
+    an element of the Sage number field K.
+    
+    Parameters:
+        coords: coordinate vector
+        nf: number field in PARI
+        K: number field in Sage
+    
+    Returns:
+        the element of K with the corresponding coordinate vector
+    """
+    elem = nf.nfbasistoalg(coords)
+    return pari_polynomial_to_sage(elem, K)
 
 def pp_elem(L12, p, k, timing = False):
     """Determine all ideals in the number field L12 with norm p^k for prime p.
@@ -55,6 +93,41 @@ def pp_elem(L12, p, k, timing = False):
                 yield from helper(ideal, r - j*n, i+1)
                 ideal *= ideal_norms[i][0]
     yield from helper(L12.ideal([1]), k, 0)
+
+    if timing:
+        time_check(f"enumerating ideals of norm {p}^{k}", time_list, 2)
+
+def pp_elem_pari(nf, p, k, timing = False):
+    """Determine all ideals in the number field L12 with norm p^k for prime p.
+    Same as pp_elem, but in PARI instead for performance.
+
+    Parameters:
+        nf: number field in PARI
+        p: prime number
+        k: nonnegative integer
+    
+    Yields:
+        All fractional ideals of nf with norm p^k (in PARI)
+    
+    Requires:
+        p is prime
+    """
+    if timing:
+        time_list = [time.time()]
+        # print("\t" + f"enumerating ideals of norm {p}^{k}...")
+
+    ideals = nf.idealprimedec(p)
+    def helper(current, r, i):
+        if i == len(ideals):
+            if r == 0:
+                yield current
+        else:
+            ideal = current
+            n = ideals[i][3]
+            for j in range(0, r // n + 1):
+                yield from helper(ideal, r - j*n, i+1)
+                ideal = nf.idealmul(ideal, ideals[i])
+    yield from helper(nf.idealhnf(1), k, 0)
 
     if timing:
         time_check(f"enumerating ideals of norm {p}^{k}", time_list, 2)
@@ -97,17 +170,83 @@ def all_elem(L12, I, k, timing = False):
         ideal = product(ideals)
         if ideal.is_principal():
             out.add(ideal.gens_reduced()[0])
+
     if timing:
         time_check(f"checking for principal ideals", time_list, 1)
     return out
 
-def all_generators(f, verbose = False, timing = False):
+def all_elem_pari(L12, I, k, timing = False):
+    """Determine all elements (up to associates) in L12 which generate
+    a power basis of index |I^k|.
+    Same as all_elem, but in PARI instead for performance.
+
+    WARNING: outputs may not be certified.
+
+    Parameters:
+        L12: number field in Sage
+        I: nonzero integer
+        k: nonnegative integer
+
+    Yields:
+        All elements of L12 with index +-I^k, up to associates
+    """
+    if timing:
+        time_list = [time.time()]
+        print("finding all values of gamma...")
+
+    if I == 1 or I == -1:
+        if timing:
+            print("\t" + "|I| = 1, this step is trivial")
+        return [L12(1)]
+    out = set()
+    factors = factor(I)
+        
+    nf = pari(L12)
+    bnf = nf.bnfinit()
+    
+    if timing:
+        time_check("factoring ideal I", time_list, 1)
+        print("\t" + f"enumerating ideals of norm {I}^{k}...")
+    
+    ideals_list = cartesian_product([list(pp_elem_pari(nf, p, e*k, timing)) for p, e in factors])
+    
+    if timing:
+        time_check(f"enumerating all {len(ideals_list)} ideals of norm {I}^{k}", time_list, 1)
+
+    for ideals in ideals_list:
+        ideal = nf.idealhnf(1)
+        for ideal_factor in ideals:
+            ideal = nf.idealmul(ideal, ideal_factor)
+        result = bnf.bnfisprincipal(ideal)
+        if all(c == 0 for c in result[0]):
+            coords = result[1]
+            if len(coords) == 0:
+                raise Exception("PARI failed to return a generator of principal ideal. Try increasing PARI's precision?")
+            
+            gamma = pari_integral_basis_coordinates_to_sage(result[1], nf, L12)
+            if abs(gamma.norm()) != abs(I^k):
+                raise Exception(f"PARI returned a generator of norm {gamma.norm()} instead of target norm {I}^{k}")
+            out.add(gamma)
+
+    if timing:
+        time_check(f"checking for principal ideals", time_list, 1)
+    return out
+
+def all_generators(f, certify, verbose = False, timing = False):
     """Determine whether the quintic field defined by the polynomial is monogenic.
 
     Currently only works on totally-real quintic fields with Galois group S5.
 
     Parameters:
         f: quintic polynomial
+        certify: whether to ensure PARI-side computations are certified.
+                 if true, may cause stalling.
+                 if false, enumeration may be incomplete due to finite-index
+                 discrepancies in computing unit group.
+        verbose: flag for additional details.
+                 if true, additional details will be printed (e.g., intermediate bounds)
+        timing: flag for timing diagnostics.
+                if true, timing details will be printed for each step.
 
     Returns:
         set of elements of NumberField(f) which generate a power basis
@@ -148,15 +287,14 @@ def all_generators(f, verbose = False, timing = False):
     ff = f(x=x1)
     ff2 = ff.resultant(ff(x1=x2-x1), x1)
     f2 = sqrt(ff2 / (32 * f(x=x2/2)))(x2=x).squarefree_part()
+    if f2.leading_coefficient() < 0:
+        f2 = -f2
     
     L12.<z12> = NumberField(f2)
     basis12 = L12.integral_basis()
 
-    # get fundamental units
-    es = UnitGroup(L12).fundamental_units()
-    matrix12 = Matrix(QQ, 10, 10, [b.list() for b in basis12])
-    ematrix12 = Matrix(QQ, 9, 10, [eps.list() for eps in es])
-    eint = ematrix12 * (matrix12 ^ -1)
+    if timing:
+        time_check("L, L12, real roots, and embeddings", time_list)
 
     # get embeddings of L12, and match them up with pairs of real roots
     Lijs = [[0 for _ in range(5)] for _ in range(5)]
@@ -171,11 +309,33 @@ def all_generators(f, verbose = False, timing = False):
                 else:
                     raise Exception("No suitable embedding found")
 
+    # get fundamental units
+    if certify:
+        es = UnitGroup(L12).fundamental_units()
+    else:
+        bnf = pari(f2).bnfinit()
+        pari_units = bnf.bnf_get_fu()
+        es = [pari_polynomial_to_sage(u, L12) for u in pari_units]
+
+        OL12 = L12.ring_of_integers()
+        for e in es:
+            if e not in OL12:
+                raise Exception("PARI returned non-integral element as fundamental unit")
+            if abs(e.norm()) != 1:
+                raise Exception("PARI returned non-unit as fundamental unit")
+
+    matrix12 = Matrix(QQ, 10, 10, [b.list() for b in basis12])
+    ematrix12 = Matrix(QQ, 9, 10, [eps.list() for eps in es])
+    eint = ematrix12 * (matrix12 ^ -1)
+
     if timing:
-        time_check("initialization, units, and embeddings", time_list)
+        time_check("computing L12 unit group", time_list)
     
     # get all gamma of norm I0^9
-    gammas = all_elem(L12, I0, 9, timing)
+    if certify:
+        gammas = all_elem(L12, I0, 9, timing)
+    else:
+        gammas = all_elem_pari(L12, I0, 9, timing)
     num_gammas = len(gammas)
     if verbose:
         print(f"found {num_gammas} possible values of gamma")
@@ -488,3 +648,4 @@ try:
 except Exception:
     print("error occurred")
     traceback.print_exc()
+    sys.exit(1)
