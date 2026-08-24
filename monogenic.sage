@@ -297,7 +297,7 @@ def all_elem_count(L12, I, k, timing = False):
         out *= pp_elem_count(L12, p, e*k, timing=timing)
     return out
 
-def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^4, timing = False):
+def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^6, timing = False):
     """Helper function to find a more favorable presentations for all_generators.
     Specifically, looks for an element of L whose index I minimizes the quantity
     all_elem_count(L12, I, k), so that the number of gammas to be enumerated incomplete
@@ -342,6 +342,64 @@ def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^4, timing = False):
 
     return best_z
 
+def bezout_vector(coords):
+    """Returns a Bezout vector for coords, i.e., a vector out such that
+    its dot product with coords is 1.
+
+    Parameters:
+        coords: integer-valued vector
+    
+    Returns:
+        Bezout vector for coords
+    
+    Requires:
+        gcd of coordinates of coords is 1
+    """
+    if gcd(coords) > 1:
+        raise ValueError(f"input to bezout_vector {coords} has gcd > 1")
+    if len(coords) == 1:
+        return vector(ZZ, coords)
+    else:
+        g = ZZ(gcd(coords[1:]))
+        if g == 0:
+            return vector(ZZ, [1] + [0] * (len(coords) - 1))
+        elif coords[0] == 0:
+            vec_tail = bezout_vector(coords[1:])
+            return vector(ZZ, [0] + vec_tail.list())
+        else:
+            m = inverse_mod(g, ZZ(coords[0]))
+            vec_tail = m * bezout_vector(coords[1:] / g)
+            vec_first = (1 - m*g) / coords[0]
+        return vector(ZZ, [vec_first] + vec_tail.list())
+
+def shift_poly(f):
+    """Given a polynomial f(x), returns n which minimizes
+    sum of squares of coefficients of f(x+n).
+
+    Parameters:
+        f: one-variable polynomial
+    
+    Returns:
+        n as described above
+    """
+    f_shift = f(x=x1+x2)
+    objective = 0
+    for i in range(f.degree() + 1):
+        objective += f_shift.coefficient(x1)^2
+    objective = objective(x2 = xR)
+    ob_roots = [r[0] for r in objective.roots()]
+    candidates = set([floor(r) for r in ob_roots] + [ceil(r) for r in ob_roots])
+
+    best_n = 0
+    best_norm = sum(c^2 for c in f.coefficients())
+    for n in candidates:
+        new_norm = objective(xR=n)
+        if new_norm < best_norm:
+            best_norm = new_norm
+            best_n = n
+
+    return best_n
+
 def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     """Determine whether the quintic field defined by the polynomial is monogenic.
 
@@ -384,7 +442,10 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         ppoly2 = ppoly.resultant(ppoly(x1=x2-x1), x1)
         poly2 = sqrt(ppoly2 / (32 * poly(x=x2/2)))(x2=x).squarefree_part()
         old_L12.<old_z12> = NumberField(poly2)
-        new_z = reduce_gammas(old_L, old_L12, timing=timing)
+        shifted_z = reduce_gammas(old_L, old_L12, timing=timing)
+        shifted_f = shifted_z.minpoly()
+
+        new_z = shifted_z - shift_poly(shifted_f)
         f = new_z.minpoly()
         if timing:
             time_check(f"reduced: {f}", time_list)
@@ -403,8 +464,16 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     
     # get starting index and target index (discriminant)
     L_disc = L.discriminant()
+    # basis = L.integral_basis()
     OL = L.ring_of_integers()
     I0 = sqrt(L.discriminant([1, z_used, z_used^2, z_used^3, z_used^4]) / L_disc)
+
+    # get an integral basis -- useful for retrieving generators later
+    basis = L.integral_basis()
+    basis_matrix = Matrix(QQ, 5, 5, [b.list() for b in basis])
+    convert_matrix = (basis_matrix ^ -1).transpose()
+    one_vector = convert_matrix * L(1).vector()
+    bezout_filter = bezout_vector(one_vector)
 
     # determine real roots
     g = f(xR)
@@ -696,21 +765,24 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             target_vector = vector(CC, 4, [(xis[0] - xis[i]) * Lijs[0][i](gamma) * product(e_values[0][i][r] ^ b[r] for r in range(9)) for i in range(1, 5)])
         
             y_vector = (system_matrix ^ -1 * target_vector).apply_map(lambda y: round(real(y)))
-            generator = sum(y_vector[i] * z_used^(i+1) for i in range(4)) / I0
+            generator_shift = sum(y_vector[i] * z_used^(i+1) for i in range(4)) / I0
             
-            if L.discriminant([generator^i for i in range(5)]) != L_disc:
-                return None
-            is_integer = False
-            for res in range(I0):
-                if generator + (res / I0) in OL:
-                    is_integer = True
-                    generator += res / I0
-                    break
-            if not is_integer:
+            if L.discriminant([generator_shift^i for i in range(5)]) != L_disc:
                 return None
             
-            if generator not in generators:
-                generators.add(generator)
+            shift = bezout_filter.dot_product(I0 * generator_shift.vector()) % I0
+            shifted_generator = generator_shift - shift / I0
+            if shifted_generator not in OL:
+                return None
+            
+            for other_generator in generators:
+                if (shifted_generator + other_generator) in ZZ or (shifted_generator - other_generator) in ZZ:
+                    return None
+            
+            shifted_minpoly = shifted_generator.minpoly()
+            generator = shifted_generator - shift_poly(shifted_minpoly)
+
+            generators.add(generator)
             return None
         
         # enumerate and reduce bound H
