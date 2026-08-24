@@ -145,6 +145,38 @@ def pp_elem_pari(nf, p, k, timing = False):
     if timing:
         time_check(f"enumerating ideals of norm {p}^{k}", time_list, 2)
 
+def pp_elem_count(L12, p, k, timing = False):
+    """Compute the number of ideals in the number field L12 with norm p^k for prime p.
+    Same as pp_elem, but only returns count instead and is much quicker.
+
+    Parameters:
+        L12: number field
+        p: prime number
+        k: nonnegative integer
+    
+    Yields:
+        Number of fractional ideals of L12 with norm p^k
+    
+    Requires:
+        p is prime
+    """
+    ideals = L12.factor(p)
+    ideal_norms = [log(ideal.norm(), p) for ideal, _ in ideals]
+    seen = {}
+    def helper(r, i):
+        if (r, i) in seen:
+            return seen[(r, i)]
+        if i == len(ideals):
+            return 1 if r == 0 else 0
+        else:
+            n = ideal_norms[i]
+            out = 0
+            for j in range(0, r // n + 1):
+                out += helper(r - j*n, i+1)
+            seen[(r, i)] = out
+            return out
+    return helper(k, 0)
+
 def all_elem(L12, I, k, timing = False):
     """Determine all elements (up to associates) in L12 which generate
     a power basis of index |I^k|.
@@ -174,7 +206,7 @@ def all_elem(L12, I, k, timing = False):
         time_check("factoring ideal I", time_list, 1)
         print("\t" + f"enumerating ideals of norm {I}^{k}...")
     
-    ideals_list = cartesian_product([list(pp_elem(L12, p, e*k, timing)) for p, e in factors])
+    ideals_list = cartesian_product([list(pp_elem(L12, p, e*k, timing=timing)) for p, e in factors])
     
     if timing:
         time_check(f"enumerating all {len(ideals_list)} ideals of norm {I}^{k}", time_list, 1)
@@ -221,7 +253,7 @@ def all_elem_pari(L12, I, k, timing = False):
         time_check("factoring ideal I", time_list, 1)
         print("\t" + f"enumerating ideals of norm {I}^{k}...")
     
-    ideals_list = cartesian_product([list(pp_elem_pari(nf, p, e*k, timing)) for p, e in factors])
+    ideals_list = cartesian_product([list(pp_elem_pari(nf, p, e*k, timing=timing)) for p, e in factors])
     
     if timing:
         time_check(f"enumerating all {len(ideals_list)} ideals of norm {I}^{k}", time_list, 1)
@@ -245,30 +277,98 @@ def all_elem_pari(L12, I, k, timing = False):
         time_check(f"checking for principal ideals", time_list, 1)
     return out
 
-def all_generators(f, certify, verbose = False, timing = False):
+def all_elem_count(L12, I, k, timing = False):
+    """Determine the number of ideals of L12 with norm |I^k|.
+    Meant to be a quick way to estimate size of output of all_elem.
+
+    Parameters:
+        L12: number field
+        I: nonzero integer
+        k: nonnegative integer
+
+    Yields:
+        Number of ideals of L12 of norm |I^k|
+    """
+    if I == 1 or I == -1:
+        return 1
+    out = 1
+    factors = factor(I)
+    for p, e in factors:
+        out *= pp_elem_count(L12, p, e*k, timing=timing)
+    return out
+
+def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^4, timing = False):
+    """Helper function to find a more favorable presentations for all_generators.
+    Specifically, looks for an element of L whose index I minimizes the quantity
+    all_elem_count(L12, I, k), so that the number of gammas to be enumerated incomplete
+    all_generators is smaller.
+
+    Parameters:
+        L: degree-5 number field
+        L12: degree-10 number field, should have principal generator
+             the sum of any two distinct roots of l
+        coeff_bound: bound on coefficients (searches by coefficients on integral basis)
+        max_index: bound on index I (elements with index > I are automatically skipped)
+
+    Returns:
+        an element of L with hopefully reduced number of gammas
+    """
+    basis = L.integral_basis()
+    L_disc = L.discriminant()
+    def ind(new_z):
+        return sqrt(L.discriminant([1, new_z, new_z^2, new_z^3, new_z^4]) / L_disc)
+
+    best_z = L.absolute_generator()
+    best_index = ind(best_z)
+    best_gammas = all_elem_count(L12, ind(best_z), 9)
+    if best_gammas == 1:
+        return best_z
+    seen = {best_index: best_gammas}
+
+    for coeffs in cartesian_product([range(-coeff_bound, coeff_bound+1)] * 5):
+        new_z = sum(c * b for c, b in zip(basis, coeffs))
+        if new_z.minpoly().degree() == 5:
+            new_index = ind(new_z)
+            if new_index < max_index:
+                if new_index not in seen:
+                    new_gammas = all_elem_count(L12, new_index, 9)
+                    seen[new_index] = new_gammas
+                    if new_gammas < best_gammas or (new_gammas == best_gammas and new_index < best_index):
+                        if new_gammas == 1:
+                            return new_z
+                        best_z = new_z
+                        best_index = new_index
+                        best_gammas = new_gammas
+
+    return best_z
+
+def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     """Determine whether the quintic field defined by the polynomial is monogenic.
 
     Currently only works on totally-real quintic fields with Galois group S5.
 
     Parameters:
-        f: quintic polynomial
+        poly: quintic polynomial
         certify: whether to ensure PARI-side computations are certified.
                  if true, may cause stalling.
                  if false, enumeration may be incomplete due to finite-index
                  discrepancies in computing unit group.
+        reduce_poly: whether to attempt to find an alternative presentation of
+                     NumberField(poly) to speed up enumeration.
+                     performance may be improved when true.
         verbose: flag for additional details.
                  if true, additional details will be printed (e.g., intermediate bounds)
         timing: flag for timing diagnostics.
                 if true, timing details will be printed for each step.
 
     Returns:
-        set of elements of NumberField(f) which generate a power basis
+        set of elements of NumberField(poly) which generate a power basis
 
     Requires:
-        f has degree 5
-        f is monic
-        f is irreducible
-        f has Galois group S5
+        poly has degree 5
+        poly is monic
+        poly is irreducible
+        poly has Galois group S5
     """
     if timing:
         time_list = [time.time()]
@@ -277,18 +377,34 @@ def all_generators(f, certify, verbose = False, timing = False):
     random.seed(int(42))
     set_random_seed(42)
 
+    old_L.<z> = NumberField(poly)
+    if reduce_poly:
+        # reduction process -- compute L and L12 as below, then reduce
+        ppoly = poly(x=x1)
+        ppoly2 = ppoly.resultant(ppoly(x1=x2-x1), x1)
+        poly2 = sqrt(ppoly2 / (32 * poly(x=x2/2)))(x2=x).squarefree_part()
+        old_L12.<old_z12> = NumberField(poly2)
+        new_z = reduce_gammas(old_L, old_L12, timing=timing)
+        f = new_z.minpoly()
+        if timing:
+            time_check(f"reduced: {f}", time_list)
+    else:
+        f = poly
+        new_z = z
+
     assert f.degree() == 5, f"{f} is not degree 5"
     assert f.is_irreducible(), f"{f} is not irreducible"
     
     generators = set()
     
-    L.<z> = NumberField(f)
+    L.<z_used> = NumberField(f)
+    phi = L.hom([new_z], old_L)
     assert L.galois_group().order() == 120, f"{f} does not have Galois group S5"
     
     # get starting index and target index (discriminant)
     L_disc = L.discriminant()
     OL = L.ring_of_integers()
-    I0 = sqrt(L.discriminant([1, z, z^2, z^3, z^4]) / L_disc)
+    I0 = sqrt(L.discriminant([1, z_used, z_used^2, z_used^3, z_used^4]) / L_disc)
 
     # determine real roots
     g = f(xR)
@@ -341,44 +457,25 @@ def all_generators(f, certify, verbose = False, timing = False):
     ematrix12 = Matrix(QQ, 9, 10, [eps.list() for eps in es])
     eint = ematrix12 * (matrix12 ^ -1)
 
+    bad_denominators = set()
+    for e in es:
+        for p, _ in factor(e.denominator()):
+            bad_denominators.add(p)
+
     if timing:
         time_check("computing L12 unit group", time_list)
     
     # get all gamma of norm I0^9
     if certify:
-        gammas = all_elem(L12, I0, 9, timing)
+        gammas = all_elem(L12, I0, 9, timing=timing)
     else:
-        gammas = all_elem_pari(L12, I0, 9, timing)
+        gammas = all_elem_pari(L12, I0, 9, timing=timing)
     num_gammas = len(gammas)
     if verbose:
         print(f"found {num_gammas} possible values of gamma")
     if timing:
         time_check(f"finding all {num_gammas} values of gamma", time_list)
 
-    bad_denominators = set()
-    for e in es:
-        for coord in e.list():
-            for p, _ in factor(coord.denominator()):
-                bad_denominators.add(p)
-    for gamma in gammas:
-        for coord in gamma.list():
-            for p, _ in factor(coord.denominator()):
-                bad_denominators.add(p)
-
-    # find p in which f splits completely
-    # this will be used for sieving later
-    p = None
-    p_roots = None
-    for tp in Primes():
-        if tp > 1000 and tp not in bad_denominators and len(f.roots(GF(tp))) == 5:
-            p = tp
-            p_roots = [r[0] for r in f.roots(GF(tp))]
-            break
-    Fp = GF(p)
-    
-    if timing:
-        time_check(f"finding sieving prime p = {p}", time_list)
-    
     for gamma_index, gamma in enumerate(gammas):
         if verbose:
             print(f"trying gamma {gamma_index+1} of {num_gammas}")
@@ -524,12 +621,26 @@ def all_generators(f, certify, verbose = False, timing = False):
             time_check("sampling triples for reduction of bound H", gamma_time_list, 1)
         
         # set up quick sieve test modulo p
+        # find p in which f splits completely
+        p = None
+        p_roots = None
+        gamma_denom = gamma.denominator()
+        for tp in Primes():
+            if tp > 1000 and p not in bad_denominators and gamma_denom%tp != 0 and len(f.roots(GF(tp))) == 5:
+                p = tp
+                p_roots = [r[0] for r in f.roots(GF(tp))]
+                break
+                
+        if timing:
+            time_check(f"finding sieving prime p = {p}", gamma_time_list, 1)
+        
         # compute all alpha, gamma, e, v modulo p -- uses Galois group S5
         p_alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         p_gammas = [[0 for _ in range(5)] for _ in range(5)]
         p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
         p_vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
         
+        Fp = GF(p)
         gamma_coords = [Fp(coord) for coord in gamma.list()]
         for i in range(5):
             for j in range(5):
@@ -580,7 +691,7 @@ def all_generators(f, certify, verbose = False, timing = False):
             target_vector = vector(CC, 4, [(xis[0] - xis[i]) * Lijs[0][i](gamma) * product(e_values[0][i][r] ^ b[r] for r in range(9)) for i in range(1, 5)])
         
             y_vector = (system_matrix ^ -1 * target_vector).apply_map(lambda y: round(real(y)))
-            generator = sum(y_vector[i] * z^(i+1) for i in range(4)) / I0
+            generator = sum(y_vector[i] * z_used^(i+1) for i in range(4)) / I0
             
             if L.discriminant([generator^i for i in range(5)]) != L_disc:
                 return None
@@ -656,7 +767,7 @@ def all_generators(f, certify, verbose = False, timing = False):
             time_check("final enumeration", gamma_time_list, 1)
             time_check(f"enumerating {len(generators) - old_count} generators for gamma {gamma_index+1} of {num_gammas}", time_list)
 
-    return generators
+    return set([phi(generator) for generator in generators])
 
 f = R(sys.argv[1])
 job_number = int(sys.argv[2])
@@ -671,7 +782,7 @@ with open(log_file_name, "w") as log_file:
         print(f, file=result_file)
         print("", file=result_file)
         try:
-            gens = all_generators(f, false, timing=True)
+            gens = all_generators(f, certify=false, reduce_poly=true, timing=True)
             for zz in gens:
                 print(zz, "\t\t", zz.charpoly(), file=result_file)
             if not gens:
