@@ -457,11 +457,6 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     ematrix12 = Matrix(QQ, 9, 10, [eps.list() for eps in es])
     eint = ematrix12 * (matrix12 ^ -1)
 
-    bad_denominators = set()
-    for e in es:
-        for p, _ in factor(e.denominator()):
-            bad_denominators.add(p)
-
     if timing:
         time_check("computing L12 unit group", time_list)
     
@@ -475,6 +470,30 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         print(f"found {num_gammas} possible values of gamma")
     if timing:
         time_check(f"finding all {num_gammas} values of gamma", time_list)
+        
+    bad_denominators = set()
+    for e in es:
+        for coord in e.list():
+            for p, _ in factor(coord.denominator()):
+                bad_denominators.add(p)
+    for gamma in gammas:
+        for coord in gamma.list():
+            for p, _ in factor(coord.denominator()):
+                bad_denominators.add(p)
+    
+    # find p in which f splits completely
+    # useful for sieving later
+    p = None
+    p_roots = None
+    for tp in Primes():
+        if tp > 1000 and tp not in bad_denominators and len(f.roots(GF(tp))) == 5:
+            p = tp
+            p_roots = [r[0] for r in f.roots(GF(tp))]
+            break
+    Fp = GF(p)
+            
+    if timing:
+        time_check(f"finding sieving prime p = {p}", time_list)
 
     for gamma_index, gamma in enumerate(gammas):
         if verbose:
@@ -621,26 +640,12 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             time_check("sampling triples for reduction of bound H", gamma_time_list, 1)
         
         # set up quick sieve test modulo p
-        # find p in which f splits completely
-        p = None
-        p_roots = None
-        gamma_denom = gamma.denominator()
-        for tp in Primes():
-            if tp > 1000 and p not in bad_denominators and gamma_denom%tp != 0 and len(f.roots(GF(tp))) == 5:
-                p = tp
-                p_roots = [r[0] for r in f.roots(GF(tp))]
-                break
-                
-        if timing:
-            time_check(f"finding sieving prime p = {p}", gamma_time_list, 1)
-        
         # compute all alpha, gamma, e, v modulo p -- uses Galois group S5
         p_alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         p_gammas = [[0 for _ in range(5)] for _ in range(5)]
         p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
         p_vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
         
-        Fp = GF(p)
         gamma_coords = [Fp(coord) for coord in gamma.list()]
         for i in range(5):
             for j in range(5):
