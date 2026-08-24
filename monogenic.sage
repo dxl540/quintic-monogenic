@@ -5,25 +5,38 @@ import time
 from sage.all import Primes
 import random
 
-pari.allocatemem(2^32)
-pari.set_real_precision(5000)
+pari.allocatemem(2^32, silent=True)
+_ = pari.set_real_precision(5000)
 
 R.<x> = PolynomialRing(QQ)
 R2.<x1, x2> = PolynomialRing(QQ, 2)
-S.<xR> = PolynomialRing(CC)
 RR = RealField(5000)
 CC = ComplexField(5000)
+S.<xR> = PolynomialRing(CC)
+
+timing_file = None
 
 def time_check(stage_name, time_list, indents=0):
-    """A helper function for displaying time diagnostics."""
+    """A helper function for displaying time diagnostics.
+    
+    Parameters:
+        stage_name: name of stage, as to be displayed
+        time_list: list of timestamps of when previous stages finished
+        indents: how many indents to print before the time diagnostics
+                 (useful for nested functions)
+    
+    Output:
+        Appends the current time to time_list, then prints the stage name,
+        time that stage took, and total time elapsed (all in seconds).
+    """
     current_time = time.time()
     start_time = time_list[0]
     last_time = time_list[-1]
     time_list.append(current_time)
     this_stage = current_time - last_time
     total_time = current_time - start_time
-    # print("\t" * indents + stage_name + f" took {this_stage:.3f} seconds, total {total_time:.3f}")
-    print("\t" * indents + f"{stage_name:<56s}"+ f"{this_stage:12.3f}{total_time:12.3f}")
+    print("\t" * indents + f"{stage_name:<56s}"+ f"{this_stage:12.3f}{total_time:12.3f}", file=timing_file)
+    
 
 def pari_polynomial_to_sage(p, K):
     """
@@ -342,6 +355,30 @@ def all_generators(f, certify, verbose = False, timing = False):
     if timing:
         time_check(f"finding all {num_gammas} values of gamma", time_list)
 
+    bad_denominators = set()
+    for e in es:
+        for coord in e.list():
+            for p, _ in factor(coord.denominator()):
+                bad_denominators.add(p)
+    for gamma in gammas:
+        for coord in gamma.list():
+            for p, _ in factor(coord.denominator()):
+                bad_denominators.add(p)
+
+    # find p in which f splits completely
+    # this will be used for sieving later
+    p = None
+    p_roots = None
+    for tp in Primes():
+        if tp > 1000 and tp not in bad_denominators and len(f.roots(GF(tp))) == 5:
+            p = tp
+            p_roots = [r[0] for r in f.roots(GF(tp))]
+            break
+    Fp = GF(p)
+    
+    if timing:
+        time_check(f"finding sieving prime p = {p}", time_list)
+    
     for gamma_index, gamma in enumerate(gammas):
         if verbose:
             print(f"trying gamma {gamma_index+1} of {num_gammas}")
@@ -487,26 +524,12 @@ def all_generators(f, certify, verbose = False, timing = False):
             time_check("sampling triples for reduction of bound H", gamma_time_list, 1)
         
         # set up quick sieve test modulo p
-        # find p in which f splits completely
-        p = None
-        p_roots = None
-        gamma_denom = gamma.denominator()
-        for tp in Primes():
-            if tp > 1000 and gamma_denom%tp != 0 and len(f.roots(GF(tp))) == 5:
-                p = tp
-                p_roots = [r[0] for r in f.roots(GF(tp))]
-                break
-                
-        if timing:
-            time_check(f"finding sieving prime p = {p}", gamma_time_list, 1)
-        
         # compute all alpha, gamma, e, v modulo p -- uses Galois group S5
         p_alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         p_gammas = [[0 for _ in range(5)] for _ in range(5)]
         p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
         p_vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
         
-        Fp = GF(p)
         gamma_coords = [Fp(coord) for coord in gamma.list()]
         for i in range(5):
             for j in range(5):
@@ -587,7 +610,7 @@ def all_generators(f, certify, verbose = False, timing = False):
         perturbation = diagonal_matrix([t] + [0] * 9)
         
         for H, h in zip(h_list, h_list[1:]):
-            _ = gp.set_real_precision(max(53, floor(2*log(H, 2))))
+            _ = pari.set_real_precision(max(53, floor(2*log(H, 2))))
             a_vector = vector([logalphas[i][j][k] for i, j, k, in I_triples])
             v_matrix = Matrix(CC, q, 9, [logvs[i][j][k] for i, j, k in I_triples])
             augmented_matrix = v_matrix.augment(a_vector)
@@ -603,8 +626,8 @@ def all_generators(f, certify, verbose = False, timing = False):
                 
                 perturbed_matrix = form_matrix + perturbation
                 
-                solutions = gp.qfminim(perturbed_matrix, q+t, -1, 2)
-                solution_vectors = solutions[3].sage().columns()
+                solutions = pari.qfminim(perturbed_matrix, q+t, -1, 2)
+                solution_vectors = solutions[2].sage().columns()
         
                 for b in solution_vectors:
                     test(b)
@@ -616,15 +639,15 @@ def all_generators(f, certify, verbose = False, timing = False):
         last_H = h_list[-1]
         if verbose:
             print(f"enumerating final bound H={last_H}")
-        gp.set_real_precision(max(53, floor(2*log(last_H, 2))))
+        pari.set_real_precision(max(53, floor(2*log(last_H, 2))))
         a_vector = vector([logalphas[i][j][k] for i, j, k, in I_triples])
         v_matrix = Matrix(CC, q, 9, [logvs[i][j][k] for i, j, k in I_triples])
         augmented_matrix = v_matrix.augment(a_vector)
         form_matrix = augmented_matrix.T * augmented_matrix
         perturbed_matrix = form_matrix + perturbation
         
-        solutions = gp.qfminim(perturbed_matrix, (q*(log(last_H))^2)+t, -1, 2)
-        solution_vectors = solutions[3].sage().columns()
+        solutions = pari.qfminim(perturbed_matrix, (q*(log(last_H))^2)+t, -1, 2)
+        solution_vectors = solutions[2].sage().columns()
         
         for b in solution_vectors:
             test(b)
@@ -635,17 +658,25 @@ def all_generators(f, certify, verbose = False, timing = False):
 
     return generators
 
-print("real 1000-input run 2")
 f = R(sys.argv[1])
-print(f)
-print()
-try:
-    gens = all_generators(f)
-    for zz in gens:
-        print(zz, "\t\t", zz.charpoly())
-    if not gens:
-        print("no generators")
-except Exception:
-    print("error occurred")
-    traceback.print_exc()
-    sys.exit(1)
+job_number = int(sys.argv[2])
+
+log_file_name = f"logs/{job_number}.log"
+result_file_name = f"results/{job_number}.out"
+
+with open(log_file_name, "w") as log_file:
+    with open(result_file_name, "w") as result_file:
+        timing_file = log_file
+        print("real 1000-input run 3 (no certify)", file=result_file)
+        print(f, file=result_file)
+        print("", file=result_file)
+        try:
+            gens = all_generators(f, false, timing=True)
+            for zz in gens:
+                print(zz, "\t\t", zz.charpoly(), file=result_file)
+            if not gens:
+                print("no generators", file=result_file)
+        except Exception:
+            print("error occurred", file=result_file)
+            traceback.print_exc()
+            sys.exit(1)

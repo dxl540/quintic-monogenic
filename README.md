@@ -2,7 +2,7 @@
 
 Code that enumerates all monogenerators of certain quintic number fields.
 (A monogenerator of a number field $K$ is an element $\alpha$ such that
-$\mathbb Z[alpha]$ equals the ring of integers of $K$.)
+$\mathbb Z[\alpha]$ equals the ring of integers of $K$.)
 Currently only works for totally real quintic number fields with Galois group $S_5$.
 
 The implemented algorithm is based on Gaál and Györy [1], as presented in Evertse 
