@@ -297,7 +297,7 @@ def all_elem_count(L12, I, k, timing = False):
         out *= pp_elem_count(L12, p, e*k, timing=timing)
     return out
 
-def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^6, timing = False):
+def reduce_gammas(L, L12, coeff_bound = 4, max_index = 10^7, timing = False):
     """Helper function to find a more favorable presentations for all_generators.
     Specifically, looks for an element of L whose index I minimizes the quantity
     all_elem_count(L12, I, k), so that the number of gammas to be enumerated incomplete
@@ -325,7 +325,8 @@ def reduce_gammas(L, L12, coeff_bound = 3, max_index = 10^6, timing = False):
         return best_z
     seen = {best_index: best_gammas}
 
-    for coeffs in cartesian_product([range(-coeff_bound, coeff_bound+1)] * 5):
+    second_half = ((2 * coeff_bound + 1)^5 + 1) / 2
+    for coeffs in cartesian_product([range(-coeff_bound, coeff_bound+1)] * 5)[second_half:]:
         new_z = sum(c * b for c, b in zip(basis, coeffs))
         if new_z.minpoly().degree() == 5:
             new_index = ind(new_z)
@@ -442,7 +443,14 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         ppoly2 = ppoly.resultant(ppoly(x1=x2-x1), x1)
         poly2 = sqrt(ppoly2 / (32 * poly(x=x2/2)))(x2=x).squarefree_part()
         old_L12.<old_z12> = NumberField(poly2)
-        shifted_z = reduce_gammas(old_L, old_L12, timing=timing)
+        initial_I = sqrt(old_L.discriminant([1, z, z^2, z^3, z^4]) / old_L.discriminant())
+        initial_gammas = all_elem_count(old_L12, initial_I, 9)
+
+        # spend longer on searching for reduced polys if initial enumeration would be large
+        if initial_gammas > 200:
+            shifted_z = reduce_gammas(old_L, old_L12, coeff_bound=5, max_index=10^9, timing=timing)
+        else:
+            shifted_z = reduce_gammas(old_L, old_L12, coeff_bound=3, max_index=10^7, timing=timing)
         shifted_f = shifted_z.minpoly()
 
         new_z = shifted_z - shift_poly(shifted_f)
