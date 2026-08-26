@@ -5,7 +5,7 @@ import time
 from sage.all import Primes
 import random
 
-pari.allocatemem(2^32, silent=True)
+pari.allocatemem(2^33, silent=True)
 _ = pari.set_real_precision(5000)
 
 R.<x> = PolynomialRing(QQ)
@@ -363,7 +363,7 @@ def bezout_vector(coords):
     else:
         g = ZZ(gcd(coords[1:]))
         if g == 0:
-            return vector(ZZ, [1] + [0] * (len(coords) - 1))
+            return vector(ZZ, [coords[0]] + [0] * (len(coords) - 1))
         elif coords[0] == 0:
             vec_tail = bezout_vector(coords[1:])
             return vector(ZZ, [0] + vec_tail.list())
@@ -447,7 +447,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         initial_gammas = all_elem_count(old_L12, initial_I, 9)
 
         # spend longer on searching for reduced polys if initial enumeration would be large
-        if initial_gammas > 200:
+        if initial_gammas >= 100:
             shifted_z = reduce_gammas(old_L, old_L12, coeff_bound=5, max_index=10^9, timing=timing)
         else:
             shifted_z = reduce_gammas(old_L, old_L12, coeff_bound=3, max_index=10^7, timing=timing)
@@ -777,7 +777,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             
             if L.discriminant([generator_shift^i for i in range(5)]) != L_disc:
                 return None
-            
+
             shift = bezout_filter.dot_product(I0 * generator_shift.vector()) % I0
             shifted_generator = generator_shift - shift / I0
             if shifted_generator not in OL:
