@@ -5,7 +5,7 @@ import time
 from sage.all import Primes
 import random
 
-pari.allocatemem(2^33, silent=True)
+pari.allocatemem(2^32, silent=True)
 _ = pari.set_real_precision(5000)
 
 R.<x> = PolynomialRing(QQ)
@@ -356,7 +356,7 @@ def bezout_vector(coords):
     Requires:
         gcd of coordinates of coords is 1
     """
-    if gcd(coords) > 1:
+    if gcd(coords) != 1:
         raise ValueError(f"input to bezout_vector {coords} has gcd > 1")
     if len(coords) == 1:
         return vector(ZZ, coords)
@@ -372,7 +372,7 @@ def bezout_vector(coords):
             vec_tail = m * bezout_vector(coords[1:] / g)
             vec_first = (1 - m*g) / coords[0]
         return vector(ZZ, [vec_first] + vec_tail.list())
-
+        
 def shift_poly(f):
     """Given a polynomial f(x), returns n which minimizes
     sum of squares of coefficients of f(x+n).
@@ -803,7 +803,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
                         H0 = max(H0, Hijk)
         h_list = [H0, 10^50, 10^20, 10^10, 10^8, 10^7, 10^6, 3*10^5, 10^5, 5*10^4, 2*10^4, 10^4, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10]
         t = 1
-        perturbation = diagonal_matrix([t] + [0] * 9)
+        perturbation = diagonal_matrix([0] * 9 + [t])
         
         for H, h in zip(h_list, h_list[1:]):
             _ = pari.set_real_precision(max(53, floor(2*log(H, 2))))
