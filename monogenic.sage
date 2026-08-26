@@ -778,7 +778,8 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             if L.discriminant([generator_shift^i for i in range(5)]) != L_disc:
                 return None
 
-            shift = bezout_filter.dot_product(I0 * generator_shift.vector()) % I0
+            generator_coords = convert_matrix * (I0 * generator_shift).vector()
+            shift = bezout_filter.dot_product(generator_coords) % I0
             shifted_generator = generator_shift - shift / I0
             if shifted_generator not in OL:
                 return None
