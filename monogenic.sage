@@ -13,11 +13,13 @@ R2.<x1, x2> = PolynomialRing(QQ, 2)
 RR = RealField(5000)
 CC = ComplexField(5000)
 S.<xR> = PolynomialRing(CC)
+AA = AlgebraicRealField()
 
 timing_file = None
 
 def time_check(stage_name, time_list, indents=0):
-    """A helper function for displaying time diagnostics.
+    """
+    A helper function for displaying time diagnostics.
     
     Parameters:
         stage_name: name of stage, as to be displayed
@@ -35,12 +37,12 @@ def time_check(stage_name, time_list, indents=0):
     time_list.append(current_time)
     this_stage = current_time - last_time
     total_time = current_time - start_time
-    print("\t" * indents + f"{stage_name:<56s}"+ f"{this_stage:12.3f}{total_time:12.3f}", file=timing_file)
+    print("\t" * indents + f"{stage_name:<64s}"+ f"{this_stage:12.3f}{total_time:12.3f}", file=timing_file)
     
 
 def pari_polynomial_to_sage(p, K):
     """
-    Convert a PARI polynomial in the defining generator into K.
+    Converts a PARI polynomial in the defining generator into K.
 
     Parameters:
         p: polynomial in PARI
@@ -61,7 +63,7 @@ def pari_polynomial_to_sage(p, K):
 
 def pari_integral_basis_coordinates_to_sage(coords, nf, K):
     """
-    Convert a PARI coordinate vector relative to an integral basis of nf into
+    Converts a PARI coordinate vector relative to an integral basis of nf into
     an element of the Sage number field K.
     
     Parameters:
@@ -76,7 +78,8 @@ def pari_integral_basis_coordinates_to_sage(coords, nf, K):
     return pari_polynomial_to_sage(elem, K)
 
 def pp_elem(L12, p, k, timing = False):
-    """Determine all ideals in the number field L12 with norm p^k for prime p.
+    """
+    Determines all ideals in the number field L12 with norm p^k for prime p.
 
     Parameters:
         L12: number field
@@ -111,7 +114,8 @@ def pp_elem(L12, p, k, timing = False):
         time_check(f"enumerating ideals of norm {p}^{k}", time_list, 2)
 
 def pp_elem_pari(nf, p, k, timing = False):
-    """Determine all ideals in the number field L12 with norm p^k for prime p.
+    """
+    Determines all ideals in the number field L12 with norm p^k for prime p.
     Same as pp_elem, but in PARI instead for performance.
 
     Parameters:
@@ -146,7 +150,8 @@ def pp_elem_pari(nf, p, k, timing = False):
         time_check(f"enumerating ideals of norm {p}^{k}", time_list, 2)
 
 def pp_elem_count(L12, p, k, timing = False):
-    """Compute the number of ideals in the number field L12 with norm p^k for prime p.
+    """
+    Computes the number of ideals in the number field L12 with norm p^k for prime p.
     Same as pp_elem, but only returns count instead and is much quicker.
 
     Parameters:
@@ -178,8 +183,8 @@ def pp_elem_count(L12, p, k, timing = False):
     return helper(k, 0)
 
 def all_elem(L12, I, k, timing = False):
-    """Determine all elements (up to associates) in L12 which generate
-    a power basis of index |I^k|.
+    """
+    Determines all elements (up to associates) in L12 which have norm |I^k|.
 
     WARNING: uses .gens_reduced(), which can sometimes stall.
 
@@ -221,8 +226,8 @@ def all_elem(L12, I, k, timing = False):
     return out
 
 def all_elem_pari(L12, I, k, timing = False):
-    """Determine all elements (up to associates) in L12 which generate
-    a power basis of index |I^k|.
+    """
+    Determines all elements (up to associates) in L12 which have norm |I^k|.
     Same as all_elem, but in PARI instead for performance.
 
     WARNING: outputs may not be certified.
@@ -278,7 +283,8 @@ def all_elem_pari(L12, I, k, timing = False):
     return out
 
 def all_elem_count(L12, I, k, timing = False):
-    """Determine the number of ideals of L12 with norm |I^k|.
+    """
+    Determine the number of ideals of L12 with norm |I^k|.
     Meant to be a quick way to estimate size of output of all_elem.
 
     Parameters:
@@ -298,9 +304,10 @@ def all_elem_count(L12, I, k, timing = False):
     return out
 
 def reduce_gammas(L, L12, coeff_bound = 4, max_index = 10^7, timing = False):
-    """Helper function to find a more favorable presentations for all_generators.
+    """
+    Helper function to find a more favorable presentation for all_generators.
     Specifically, looks for an element of L whose index I minimizes the quantity
-    all_elem_count(L12, I, k), so that the number of gammas to be enumerated incomplete
+    all_elem_count(L12, I, k), so that the number of gammas to be enumerated in
     all_generators is smaller.
 
     Parameters:
@@ -344,7 +351,8 @@ def reduce_gammas(L, L12, coeff_bound = 4, max_index = 10^7, timing = False):
     return best_z
 
 def bezout_vector(coords):
-    """Returns a Bezout vector for coords, i.e., a vector out such that
+    """
+    Returns a Bezout vector for coords, i.e., a vector such that
     its dot product with coords is 1.
 
     Parameters:
@@ -374,7 +382,8 @@ def bezout_vector(coords):
         return vector(ZZ, [vec_first] + vec_tail.list())
         
 def shift_poly(f):
-    """Given a polynomial f(x), returns n which minimizes
+    """
+    Given a polynomial f(x), returns n which minimizes
     sum of squares of coefficients of f(x+n).
 
     Parameters:
@@ -401,8 +410,34 @@ def shift_poly(f):
 
     return best_n
 
-def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
-    """Determine whether the quintic field defined by the polynomial is monogenic.
+def row_norm(M):
+    """
+    Given a matrix M, computes the row norm of M, i.e., the maximum
+    L^1 norm of one of its rows.
+
+    Parameters:
+        M: real-valued matrix
+    
+    Returns:
+        row norm of M, as defined above
+    """
+    out = 0
+    for row in M:
+        out = max(out, sum(abs(r) for r in row))
+    return out
+
+def height_from_log_conjugates(alpha, logalphas):
+    """
+    Computes the logarithmic Weil height of an algebraic element
+    alpha, given a list of the logs of its conjugates.
+    """
+    alpha_poly = alpha.minpoly()
+    leading_coeff = alpha_poly.leading_coefficient() * alpha_poly.denominator()
+    return (abs(log(leading_coeff)) + sum(map(lambda l: max(0, l), logalphas))) / len(logalphas)
+
+def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, timing = False):
+    """
+    Determines whether the quintic field defined by the polynomial is monogenic.
 
     Currently only works on totally-real quintic fields with Galois group S5.
 
@@ -415,6 +450,9 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         reduce_poly: whether to attempt to find an alternative presentation of
                      NumberField(poly) to speed up enumeration.
                      performance may be improved when true.
+                     (results are still returned in terms of the original input.)
+        precision: number of bits of precision to use when computing logarithms and bounds.
+                   defaults to 5000
         verbose: flag for additional details.
                  if true, additional details will be printed (e.g., intermediate bounds)
         timing: flag for timing diagnostics.
@@ -435,6 +473,10 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     # ensure reproducibility
     random.seed(int(42))
     set_random_seed(42)
+
+    RR = RealField(precision)
+    CC = ComplexField(precision)
+    S.<xR> = PolynomialRing(CC)
 
     old_L.<z> = NumberField(poly)
     if reduce_poly:
@@ -470,7 +512,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     phi = L.hom([new_z], old_L)
     assert L.galois_group().order() == 120, f"{f} does not have Galois group S5"
     
-    # get starting index and target index (discriminant)
+    # get starting index and target index (via discriminant)
     L_disc = L.discriminant()
     # basis = L.integral_basis()
     OL = L.ring_of_integers()
@@ -484,11 +526,10 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     bezout_filter = bezout_vector(one_vector)
 
     # determine real roots
-    g = f(xR)
-    xis = [r[0] for r in g.roots()]
+    xis = [r[0] for r in f.roots(AA)]
     assert len(xis) == 5, f"{f} is not totally real"
 
-    # define number field L12, the degree-10 number field spanned by
+    # define number field L12, the degree-10 number field generated by
     # r+s and rs for two roots r and s of f
     ff = f(x=x1)
     ff2 = ff.resultant(ff(x1=x2-x1), x1)
@@ -497,10 +538,6 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         f2 = -f2
     
     L12.<z12> = NumberField(f2)
-    basis12 = L12.integral_basis()
-
-    if timing:
-        time_check("L, L12, real roots, and embeddings", time_list)
 
     # get embeddings of L12, and match them up with pairs of real roots
     Lijs = [[0 for _ in range(5)] for _ in range(5)]
@@ -508,12 +545,10 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         for j in range(5):
             if i != j:
                 target = xis[i] + xis[j]
-                for K in L12.embeddings(CC):
-                    if abs(K(z12) - target) <= 10^-15:
-                        Lijs[i][j] = K
-                        break
-                else:
-                    raise Exception("No suitable embedding found")
+                Lijs[i][j] = L12.hom([target], AA)
+
+    if timing:
+        time_check("L, L12, real roots, and embeddings", time_list)
 
     # get fundamental units
     if certify:
@@ -530,10 +565,6 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             if abs(e.norm()) != 1:
                 raise Exception("PARI returned non-unit as fundamental unit")
 
-    matrix12 = Matrix(QQ, 10, 10, [b.list() for b in basis12])
-    ematrix12 = Matrix(QQ, 9, 10, [eps.list() for eps in es])
-    eint = ematrix12 * (matrix12 ^ -1)
-
     if timing:
         time_check("computing L12 unit group", time_list)
     
@@ -543,11 +574,14 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
     else:
         gammas = all_elem_pari(L12, I0, 9, timing=timing)
     num_gammas = len(gammas)
+
     if verbose:
         print(f"found {num_gammas} possible values of gamma")
     if timing:
         time_check(f"finding all {num_gammas} values of gamma", time_list)
         
+    # set up a prime-modulus sieve
+    # first, determine which primes are unsuitable
     bad_denominators = set()
     for e in es:
         for coord in e.list():
@@ -558,8 +592,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             for p, _ in factor(coord.denominator()):
                 bad_denominators.add(p)
     
-    # find p in which f splits completely
-    # useful for sieving later
+    # now, find suitable p in which f splits completely
     p = None
     p_roots = None
     for tp in Primes():
@@ -571,7 +604,118 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             
     if timing:
         time_check(f"finding sieving prime p = {p}", time_list)
+    
+    # compute es and vs, both real values and modulo p
 
+    e_values = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
+    for i in range(5):
+        for j in range(5):
+            if i != j:
+                for r in range(9):
+                    e_values[i][j][r] = Lijs[i][j](es[r])
+                    
+    vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
+    logvs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]    
+    for i in range(5):
+        for j in range(5):
+            for k in range(5):
+                if i != j != k != i:
+                    for r in range(9):
+                        vs[i][j][k][r] = e_values[i][j][r] / e_values[i][k][r]
+                        logvs[i][j][k][r] = log(abs(RR(vs[i][j][k][r])))
+                        
+    p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
+    for i in range(5):
+        for j in range(5):
+            if i != j:
+                p_zij = p_roots[i] + p_roots[j]
+                for r in range(9):
+                    e_coords = [Fp(coord) for coord in es[r].list()]
+                    p_es[i][j][r] = sum(p_zij^k * coord for k, coord in enumerate(e_coords))
+    
+    p_vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
+    for i in range(5):
+        for j in range(5):
+            for k in range(5):
+                if i != j != k != i:
+                    for r in range(9):
+                        p_vs[i][j][k][r] = p_es[i][j][r] / p_es[i][k][r]
+    
+    if timing:
+        time_check("computing es and vs", time_list)
+    
+    # precompute heights of vs, as these are needed in the Baker-type bounds
+    v_bound_contribution = 1
+    flat_logvs = flatten(logvs, max_level = 2)
+    transposed_logvs = [list(row) for row in zip(*flat_logvs)]
+    for r in range(9):
+        v_height = height_from_log_conjugates(vs[0][1][2][r], transposed_logvs[r])
+        v_max = max(map(lambda l: abs(l[r]), flat_logvs))
+        v_bound_contribution *= max(v_height, v_max/120, 1/120)
+    
+    if timing:
+        time_check("computing heights of vs", time_list)
+        
+    # sampling triples can occur now, as it's only dependent on vs
+    
+    all_triples = [(i,j,k) for k in range(5) for j in range(5) for i in range(5) if i != j != k != i]
+    
+    # sample random sets of triples to find one which is good for bounding
+    used_triples = None
+    M = None
+    best_c = infinity
+    for _ in range(1000):
+        sample = random.sample(all_triples, 9)
+        sample_M = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in sample])
+        if abs(sample_M.det()) < 10^-50:
+            # probably linearly dependent
+            continue
+        sample_c = row_norm(sample_M ^ -1)
+        if sample_c < best_c:
+            used_triples = sample
+            M = sample_M
+            best_c = sample_c
+    
+    if timing:
+        time_check("sampling triples for Baker-type bound", time_list)
+
+    sorted_triples = [(i, j, k) for i in range(5) for j in range(i+1, 5) for k in range(j+1, 5)]
+
+    # sample triples for bound reduction of H
+    def generate_I(length):
+        sample = random.sample(sorted_triples, length)
+        out = []
+        for i, j, k in sample:
+            if random.randint(0, 1) == 0:
+                out.append((i, j, k))
+            else:
+                out.append((i, k, j))
+            if random.randint(0, 1) == 0:
+                out.append((j, k, i))
+            else:
+                out.append((j, i, k))
+            if random.randint(0, 1) == 0:
+                out.append((k, i, j))
+            else:
+                out.append((k, j, i))
+        return random.sample(out, len(out))
+
+    target_length = 5
+    attempts = 0
+    I_triples = generate_I(target_length)
+    I_matrix = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in I_triples[:9]])
+    while I_matrix.det() < 10^-50:
+        attempts += 1
+        if attempts%200 == 0:
+            target_length += 1
+        I_triples = generate_I(target_length)
+        I_matrix = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in I_triples[:9]])
+    q = len(I_triples)
+
+    if timing:
+        time_check("sampling triples for reduction of bound H", time_list)
+
+    # enumerate over all gammas
     for gamma_index, gamma in enumerate(gammas):
         if verbose:
             print(f"trying gamma {gamma_index+1} of {num_gammas}")
@@ -582,68 +726,25 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         # compute all real values of alpha, e, v and their logs
         alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         logalphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
-        e_values = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
-        vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
-        logvs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
-        
-        for i in range(5):
-            for j in range(5):
-                if i != j:
-                    for r in range(9):
-                        e_values[i][j][r] = Lijs[i][j](es[r])
         
         for i in range(5):
             for j in range(5):
                 for k in range(5):
                     if i != j != k != i:
                         alphas[i][j][k] = (Lijs[i][j](gamma) * (xis[i] - xis[j])) / (Lijs[i][k](gamma) * (xis[i] - xis[k]))
-                        logalphas[i][j][k] = log(abs(alphas[i][j][k]))
-                        for r in range(9):
-                            vs[i][j][k][r] = e_values[i][j][r] / e_values[i][k][r]
-                            logvs[i][j][k][r] = log(abs(vs[i][j][k][r]))
+                        logalphas[i][j][k] = log(abs(RR(alphas[i][j][k])))
         
         if timing:
-            time_check("computing alphas, es, vs, and logs", gamma_time_list, 1)
+            time_check("computing alphas and logs", gamma_time_list, 1)
 
-        def row_norm(M):
-            out = 0
-            for row in M:
-                out = max(out, sum(abs(r) for r in row))
-            return out
-        
-        all_triples = [(i,j,k) for k in range(5) for j in range(5) for i in range(5) if i != j != k != i]
-        
-        # sample random sets of triples to find one which is good for bounding
-        used_triples = None
-        M = None
-        best_c = infinity
-        for _ in range(1000):
-            sample = random.sample(all_triples, 9)
-            sample_M = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in sample])
-            if sample_M.det() < 10^-50:
-                # probably linearly dependent
-                continue
-            sample_c = row_norm(sample_M ^ -1)
-            if sample_c < best_c:
-                used_triples = sample
-                M = sample_M
-                best_c = sample_c
-        
-        if timing:
-            time_check("sampling triples for Baker-type bound", gamma_time_list, 1)
-
-        # Baker-type bound (currently relies on Galois group S5)
+        # Baker-type bound (currently relies on Galois group S5 for computing height)
         c1 = best_c
         c2 = max(map(abs, flatten(logalphas)))
         C0 = 18 * factorial(11) * (10^11) * ((32*120)^12) * log(2*10*120)
         
-        alpha_height = (sum(map(lambda l: max(0, l), flatten(logalphas))) / 60)
+        alpha_height = height_from_log_conjugates(alphas[0][1][2], flatten(logalphas))
         C0 *= max(alpha_height, c2/120, 1/120)
-        flat_logvs = flatten(logvs, max_level = 2)
-        for r in range(9):
-            v_height = (sum(map(lambda l: max(0, l[r]), flat_logvs)) / 60)
-            v_max = max(map(lambda l: abs(l[r]), flat_logvs))
-            C0 *= max(v_height, v_max/120, 1/120)
+        C0 *= v_bound_contribution
         
         B0 = 10^10
         while log(2*c2) - B0/c1 >= -C0 * log(B0):
@@ -680,48 +781,10 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         if timing:
             time_check(f"computing reduced bound B = {worst_B}", gamma_time_list, 1)
         
-        sorted_triples = [(i, j, k) for i in range(5) for j in range(i+1, 5) for k in range(j+1, 5)]
-        
-        # sample triples for bound reduction of H
-        def generate_I(length):
-            sample = random.sample(sorted_triples, length)
-            out = []
-            for i, j, k in sample:
-                if random.randint(0, 1) == 0:
-                    out.append((i, j, k))
-                else:
-                    out.append((i, k, j))
-                if random.randint(0, 1) == 0:
-                    out.append((j, k, i))
-                else:
-                    out.append((j, i, k))
-                if random.randint(0, 1) == 0:
-                    out.append((k, i, j))
-                else:
-                    out.append((k, j, i))
-            return random.sample(out, len(out))
-        
-        target_length = 5
-        attempts = 0
-        I_triples = generate_I(target_length)
-        I_matrix = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in I_triples[:9]])
-        while I_matrix.det() < 10^-50:
-            attempts += 1
-            if attempts%200 == 0:
-                target_length += 1
-            I_triples = generate_I(target_length)
-            I_matrix = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in I_triples[:9]])
-        q = len(I_triples)
-
-        if timing:
-            time_check("sampling triples for reduction of bound H", gamma_time_list, 1)
-        
         # set up quick sieve test modulo p
-        # compute all alpha, gamma, e, v modulo p -- uses Galois group S5
+        # compute alphas and gamma modulo p -- uses Galois group S5
         p_alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         p_gammas = [[0 for _ in range(5)] for _ in range(5)]
-        p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
-        p_vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
         
         gamma_coords = [Fp(coord) for coord in gamma.list()]
         for i in range(5):
@@ -729,17 +792,12 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
                 if i != j:
                     p_zij = p_roots[i] + p_roots[j]
                     p_gammas[i][j] = sum(p_zij^k * g_coord for k, g_coord in enumerate(gamma_coords))
-                    for r in range(9):
-                        e_coords = [Fp(coord) for coord in es[r].list()]
-                        p_es[i][j][r] = sum(p_zij^k * coord for k, coord in enumerate(e_coords))
         
         for i in range(5):
             for j in range(5):
                 for k in range(5):
                     if i != j != k != i:
                         p_alphas[i][j][k] = (p_gammas[i][j] * (p_roots[i] - p_roots[j])) / (p_gammas[i][k] * (p_roots[i] - p_roots[k]))
-                        for r in range(9):
-                            p_vs[i][j][k][r] = p_es[i][j][r] / p_es[i][k][r]
         
         if timing:
             time_check("computing everything modulo p", gamma_time_list, 1)
@@ -747,12 +805,14 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
         # sieve and test solutions
         old_count = len(generators)
         def test(b):
+            # normalize so coefficient of log(alpha) is +1
             if b[-1] == -1:
                 b = -b
             if b[-1] != 1:
                 return None
             b = b[:-1]
-                
+            
+            # sieve, first triple
             first_term = p_alphas[0][1][2]
             second_term = p_alphas[2][1][0]
             for r in range(9):
@@ -760,7 +820,8 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
                 second_term *= p_vs[2][1][0][r] ^ b[r]
             if first_term + second_term != 1:
                 return None
-                
+            
+            # sieve, second triple
             first_term = p_alphas[2][3][4]
             second_term = p_alphas[4][3][2]
             for r in range(9):
@@ -768,7 +829,8 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
                 second_term *= p_vs[4][3][2][r] ^ b[r]
             if first_term + second_term != 1:
                 return None
-        
+
+            # solve system to recover original coefficients
             system_matrix = Matrix(CC, 4, 4, [[xis[i]^j - xis[0]^j for j in range(1, 5)] for i in range(1, 5)])
             target_vector = vector(CC, 4, [(xis[0] - xis[i]) * Lijs[0][i](gamma) * product(e_values[0][i][r] ^ b[r] for r in range(9)) for i in range(1, 5)])
         
@@ -778,6 +840,7 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
             if L.discriminant([generator_shift^i for i in range(5)]) != L_disc:
                 return None
 
+            # find the integer shift of the recovered value
             generator_coords = convert_matrix * (I0 * generator_shift).vector()
             shift = bezout_filter.dot_product(generator_coords) % I0
             shifted_generator = generator_shift - shift / I0
@@ -803,10 +866,18 @@ def all_generators(poly, certify, reduce_poly, verbose = False, timing = False):
                         Hijk = abs(logalphas[i][j][k]) + worst_B * sum(abs(logvs[i][j][k][r]) for r in range(9))
                         H0 = max(H0, Hijk)
         h_list = [H0, 10^50, 10^20, 10^10, 10^8, 10^7, 10^6, 3*10^5, 10^5, 5*10^4, 2*10^4, 10^4, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10]
+        
+        # add a perturbation to form matrices, at the coordinate corresponding to log(alpha)
+        # this helps prevent ill-formed matrices which are degenerate or close to it
+        # since this coefficient must be 1, perturbing here by t can only change a vector's 
+        # norm by up to t, so the enumeration is still sound
         t = 1
         perturbation = diagonal_matrix([0] * 9 + [t])
         
         for H, h in zip(h_list, h_list[1:]):
+            # dynamically update precision
+            # keeps results precise when needed for large H and h,
+            # but fast for small H and h where most of the candidate solutions live
             _ = pari.set_real_precision(max(53, floor(2*log(H, 2))))
             a_vector = vector([logalphas[i][j][k] for i, j, k, in I_triples])
             v_matrix = Matrix(CC, q, 9, [logvs[i][j][k] for i, j, k in I_triples])
