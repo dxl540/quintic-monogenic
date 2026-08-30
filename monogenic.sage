@@ -87,7 +87,7 @@ def pp_elem(L12, p, k, timing = False):
         k: nonnegative integer
     
     Yields:
-        All fractional ideals of L12 with norm p^k
+        All integral ideals of L12 with norm p^k
     
     Requires:
         p is prime
@@ -98,6 +98,10 @@ def pp_elem(L12, p, k, timing = False):
 
     ideals = L12.factor(p)
     ideal_norms = [(ideal, log(ideal.norm(), p)) for ideal, _ in ideals]
+
+    # helper function enumerates ideals of norm p^r which have factorization
+    # not using the first i ideals, allowing for a DFS-like enumeration
+    # other versions of pp_elem work similarly
     def helper(current, r, i):
         if i == len(ideals):
             if r == 0:
@@ -124,7 +128,7 @@ def pp_elem_pari(nf, p, k, timing = False):
         k: nonnegative integer
     
     Yields:
-        All fractional ideals of nf with norm p^k (in PARI)
+        All integral ideals of nf with norm p^k (in PARI)
     
     Requires:
         p is prime
@@ -160,7 +164,7 @@ def pp_elem_count(L12, p, k, timing = False):
         k: nonnegative integer
     
     Yields:
-        Number of fractional ideals of L12 with norm p^k
+        Number of integral ideals of L12 with norm p^k
     
     Requires:
         p is prime
@@ -193,14 +197,15 @@ def all_elem(L12, I, k, timing = False):
         I: nonzero integer
         k: nonnegative integer
 
-    Yields:
+    Returns:
         All elements of L12 with index +-I^k, up to associates
     """
     if timing:
         time_list = [time.time()]
         print("finding all values of gamma...")
 
-    if I == 1 or I == -1:
+    I = ZZ(abs(I))
+    if I == 1:
         if timing:
             print("\t" + "|I| = 1, this step is trivial")
         return [L12(1)]
@@ -237,14 +242,15 @@ def all_elem_pari(L12, I, k, timing = False):
         I: nonzero integer
         k: nonnegative integer
 
-    Yields:
+    Returns:
         All elements of L12 with index +-I^k, up to associates
     """
     if timing:
         time_list = [time.time()]
         print("finding all values of gamma...")
-
-    if I == 1 or I == -1:
+        
+    I = ZZ(abs(I))
+    if I == 1:
         if timing:
             print("\t" + "|I| = 1, this step is trivial")
         return [L12(1)]
@@ -270,6 +276,8 @@ def all_elem_pari(L12, I, k, timing = False):
         result = bnf.bnfisprincipal(ideal)
         if all(c == 0 for c in result[0]):
             coords = result[1]
+
+            # since we're not certifying, check PARI actually returns an element of the correct norm
             if len(coords) == 0:
                 raise Exception("PARI failed to return a generator of principal ideal. Try increasing PARI's precision?")
             
@@ -295,7 +303,8 @@ def all_elem_count(L12, I, k, timing = False):
     Yields:
         Number of ideals of L12 of norm |I^k|
     """
-    if I == 1 or I == -1:
+    I = ZZ(abs(I))
+    if I == 1:
         return 1
     out = 1
     factors = factor(I)
@@ -309,6 +318,9 @@ def reduce_gammas(L, L12, coeff_bound = 4, max_index = 10^7, timing = False):
     Specifically, looks for an element of L whose index I minimizes the quantity
     all_elem_count(L12, I, k), so that the number of gammas to be enumerated in
     all_generators is smaller.
+
+    This is merely a computation-reducing step, not a guarantee that the absolute
+    minimum index is found.
 
     Parameters:
         L: degree-5 number field
@@ -332,15 +344,22 @@ def reduce_gammas(L, L12, coeff_bound = 4, max_index = 10^7, timing = False):
         return best_z
     seen = {best_index: best_gammas}
 
+    # enumerate elements of the form c_1 * b_1 + ... + c_5 * b_5, where
+    # {b_1, ..., b_5} is an integral basis.
+    # we only need to enumerate half of these elements, as new_z and
+    # -new_z always give the same index.
     second_half = ((2 * coeff_bound + 1)^5 + 1) / 2
     for coeffs in cartesian_product([range(-coeff_bound, coeff_bound+1)] * 5)[second_half:]:
         new_z = sum(c * b for c, b in zip(basis, coeffs))
         if new_z.minpoly().degree() == 5:
             new_index = ind(new_z)
-            if new_index < max_index:
+            if new_index <= max_index:
+                # since we only care about index and number of gammas,
+                # we can skip any index we've already seen before
                 if new_index not in seen:
                     new_gammas = all_elem_count(L12, new_index, 9)
                     seen[new_index] = new_gammas
+                    # prioritize smaller number of gammas first, and smaller index second
                     if new_gammas < best_gammas or (new_gammas == best_gammas and new_index < best_index):
                         if new_gammas == 1:
                             return new_z
@@ -393,11 +412,17 @@ def shift_poly(f):
         n as described above
     """
     f_shift = f(x=x1+x2)
-    objective = 0
-    for i in range(f.degree() + 1):
-        objective += f_shift.coefficient(x1)^2
-    objective = objective(x2 = xR)
-    ob_roots = [r[0] for r in objective.roots()]
+
+    # compute objective, i.e., sum of squares of coefficients
+    objective = f_shift(x1=0)^2
+    # coefficient(x1^0) returns the whole poly instead of just the component with
+    # degree 0 in x1, so it needs to be handled separately
+    for i in range(1, f.degree() + 1):
+        objective += f_shift.coefficient(x1^i)^2
+    objective = objective(x2=xR)
+
+    # try the integers closest to the critical points of objective
+    ob_roots = [r[0] for r in objective.derivative().roots()]
     candidates = set([floor(r) for r in ob_roots] + [ceil(r) for r in ob_roots])
 
     best_n = 0
@@ -431,6 +456,11 @@ def height_from_log_conjugates(alpha, logalphas):
     Computes the logarithmic Weil height of an algebraic element
     alpha, given a list of the logs of its conjugates.
     """
+    # this height can be computed as 
+    #   (log(A) + sum_{alpha_conj} max(0, log(alpha_conj)))/ d
+    # where A is the leading coefficient of the minimal polynomial of alpha,
+    # d is its degree, and
+    # the summation is over Galois conjugates of alpha.
     alpha_poly = alpha.minpoly()
     leading_coeff = alpha_poly.leading_coefficient() * alpha_poly.denominator()
     return (abs(log(leading_coeff)) + sum(map(lambda l: max(0, l), logalphas))) / len(logalphas)
@@ -444,8 +474,10 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     Parameters:
         poly: quintic polynomial
         certify: whether to ensure PARI-side computations are certified.
-                 if true, may cause stalling.
-                 if false, enumeration may be incomplete due to finite-index
+                 if certify is true, uses Sage-side UnitGroup and gens_reduced
+                 to compute unit group and gammas, which may cause stalling.
+                 if false, uses PARI-side bfinit and bnfisprincipal, which is more
+                 performant, but enumeration may be incomplete due to finite-index
                  discrepancies in computing unit group.
         reduce_poly: whether to attempt to find an alternative presentation of
                      NumberField(poly) to speed up enumeration.
@@ -476,7 +508,6 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
 
     RR = RealField(precision)
     CC = ComplexField(precision)
-    S.<xR> = PolynomialRing(CC)
 
     old_L.<z> = NumberField(poly)
     if reduce_poly:
@@ -516,6 +547,8 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     L_disc = L.discriminant()
     # basis = L.integral_basis()
     OL = L.ring_of_integers()
+    # I0 is the index of the order generated by the initial power basis,
+    # with respect to the ring of integers.
     I0 = sqrt(L.discriminant([1, z_used, z_used^2, z_used^3, z_used^4]) / L_disc)
 
     # get an integral basis -- useful for retrieving generators later
@@ -529,17 +562,27 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     xis = [r[0] for r in f.roots(AA)]
     assert len(xis) == 5, f"{f} is not totally real"
 
+    # this matrix is used for recovering original coordinates
+    system_matrix = Matrix(CC, 4, 4, [[xis[i]^j - xis[0]^j for j in range(1, 5)] for i in range(1, 5)])
+
     # define number field L12, the degree-10 number field generated by
-    # r+s and rs for two roots r and s of f
-    ff = f(x=x1)
-    ff2 = ff.resultant(ff(x1=x2-x1), x1)
-    f2 = sqrt(ff2 / (32 * f(x=x2/2)))(x2=x).squarefree_part()
+    # r+s and rs for two distinct roots r and s of f
+    
+    # this is done by computing the degree-10 polynomial f2 whose roots are
+    # the 10 possible values of r+s.
+    # first, the resultant is used to compute product of (x-r-s) over All
+    # 25 pairs of roots (r,s).
+    # then, divide through by product of (x-2r), and take the square root.
+    f_x1 = f(x=x1)
+    f_resultant = f_x1.resultant(f_x1(x1=x2-x1), x1)
+    f2 = sqrt(f_resultant / (32 * f(x=x2/2)))(x2=x).squarefree_part()
     if f2.leading_coefficient() < 0:
         f2 = -f2
+    assert f2(xis[0] + xis[1]) == 0, "degree-10 number field L_12 was not computed correctly"
     
     L12.<z12> = NumberField(f2)
 
-    # get embeddings of L12, and match them up with pairs of real roots
+    # get embeddings of L12, and match them up with sums of pairs of real roots
     Lijs = [[0 for _ in range(5)] for _ in range(5)]
     for i in range(5):
         for j in range(5):
@@ -568,7 +611,9 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     if timing:
         time_check("computing L12 unit group", time_list)
     
-    # get all gamma of norm I0^9
+    # the algorithm requires enumeration over a complete set of gamma
+    # up to associates with norm +-I*I0^9.
+    # here, our target index I is 1, so get all gamma of norm +-I0^9
     if certify:
         gammas = all_elem(L12, I0, 9, timing=timing)
     else:
@@ -607,15 +652,21 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     
     # compute es and vs, both real values and modulo p
 
+    # For i != j and 0 <= r <= 8, Gaal-Gyory defines e^{i,j}_r to be the
+    # (i, j)-th embedding of the r-th fundamental unit
     e_values = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
     for i in range(5):
         for j in range(5):
             if i != j:
                 for r in range(9):
                     e_values[i][j][r] = Lijs[i][j](es[r])
-                    
+
+    # Gaal-Gyory defines
+    #   v^{i,j,k}_r = e^{i,j}_r / e^{i,k}_r   
+    # for distinct i, j, and k, and 0 <= r <= 8.
+    # note that this is not symmetric in i, j, and k.
     vs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
-    logvs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]    
+    logvs = [[[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)] for _ in range(5)]
     for i in range(5):
         for j in range(5):
             for k in range(5):
@@ -623,7 +674,10 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
                     for r in range(9):
                         vs[i][j][k][r] = e_values[i][j][r] / e_values[i][k][r]
                         logvs[i][j][k][r] = log(abs(RR(vs[i][j][k][r])))
-                        
+
+    # same computations, modulo p for the sieve.
+    # note that this implicitly assumes the Galois group is S5, as
+    # the real roots are arbitrarily matched up with the roots modulo p.
     p_es = [[[0 for _ in range(9)] for _ in range(5)] for _ in range(5)]
     for i in range(5):
         for j in range(5):
@@ -649,6 +703,9 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     flat_logvs = flatten(logvs, max_level = 2)
     transposed_logvs = [list(row) for row in zip(*flat_logvs)]
     for r in range(9):
+        # since we assume the Galois group is S5, we can assume the Galois
+        # conjugates of each v include all 60 triples of indices (i, j, k)
+        # when computing height.
         v_height = height_from_log_conjugates(vs[0][1][2][r], transposed_logvs[r])
         v_max = max(map(lambda l: abs(l[r]), flat_logvs))
         v_bound_contribution *= max(v_height, v_max/120, 1/120)
@@ -661,6 +718,7 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     all_triples = [(i,j,k) for k in range(5) for j in range(5) for i in range(5) if i != j != k != i]
     
     # sample random sets of triples to find one which is good for bounding
+    # goal is to minimize row norm, so that the bound is minimized
     used_triples = None
     M = None
     best_c = infinity
@@ -682,6 +740,11 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     sorted_triples = [(i, j, k) for i in range(5) for j in range(i+1, 5) for k in range(j+1, 5)]
 
     # sample triples for bound reduction of H
+    # these are subject to the conditions described in Gaal-Gyory,
+    # and the goal is to minimize the number of triples needed.
+    # the following attempts to generate a suitable set of size
+    # 3*length, permuted randomly. the first 9 of these triples
+    # need to satisfy a linear independence condition.
     def generate_I(length):
         sample = random.sample(sorted_triples, length)
         out = []
@@ -704,8 +767,9 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
     attempts = 0
     I_triples = generate_I(target_length)
     I_matrix = Matrix(CC, 9, 9, [logvs[i][j][k] for i, j, k in I_triples[:9]])
-    while I_matrix.det() < 10^-50:
+    while abs(I_matrix.det()) < 10^-50:
         attempts += 1
+        # if generating triples isn't working, increase the allowed number of triples.
         if attempts%200 == 0:
             target_length += 1
         I_triples = generate_I(target_length)
@@ -723,7 +787,14 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
             print(f"trying gamma {gamma_index+1} of {num_gammas}...")
             gamma_time_list = [time.time()]
 
-        # compute all real values of alpha, e, v and their logs
+        # compute all real values of alpha and their logs
+        
+        # Gaal-Gyory defines
+        #   alpha^{i,j,k}_r = gamma^{i,j}(xi_i - xi_j) / (gamma^{i,k}(xi_i - xi_k)),   
+        # for distinct i, j, and k, and 0 <= r <= 8, where
+        # gamma^{i,j} is the (i,j)-th embedding of gamma, and xi_i are the roots
+        # of the original degree-5 polynomial.
+        # Note that this is not symmetric in i, j, and k.
         alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         logalphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         
@@ -742,6 +813,8 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
         c2 = max(map(abs, flatten(logalphas)))
         C0 = 18 * factorial(11) * (10^11) * ((32*120)^12) * log(2*10*120)
         
+        # again, as we assume Galois group S5, we can assume all 60 indices 
+        # (i,j,k) appear as conjugates for the height computation.
         alpha_height = height_from_log_conjugates(alphas[0][1][2], flatten(logalphas))
         C0 *= max(alpha_height, c2/120, 1/120)
         C0 *= v_bound_contribution
@@ -782,7 +855,9 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
             time_check(f"computing reduced bound B = {worst_B}", gamma_time_list, 1)
         
         # set up quick sieve test modulo p
-        # compute alphas and gamma modulo p -- uses Galois group S5
+        # compute alphas and gamma modulo p
+        # again, as we assume Galois group S5, we can arbitrarily match up the 
+        # real roots to the roots modulo p.
         p_alphas = [[[0 for _ in range(5)] for _ in range(5)] for _ in range(5)]
         p_gammas = [[0 for _ in range(5)] for _ in range(5)]
         
@@ -831,9 +906,7 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
                 return None
 
             # solve system to recover original coefficients
-            system_matrix = Matrix(CC, 4, 4, [[xis[i]^j - xis[0]^j for j in range(1, 5)] for i in range(1, 5)])
             target_vector = vector(CC, 4, [(xis[0] - xis[i]) * Lijs[0][i](gamma) * product(e_values[0][i][r] ^ b[r] for r in range(9)) for i in range(1, 5)])
-        
             y_vector = (system_matrix ^ -1 * target_vector).apply_map(lambda y: round(real(y)))
             generator_shift = sum(y_vector[i] * z_used^(i+1) for i in range(4)) / I0
             
@@ -841,6 +914,11 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
                 return None
 
             # find the integer shift of the recovered value
+            # this is done via bezout_filter, a vector whose dot product
+            # with the coordinate vector of 1 is 1.
+            # thus, if some value beta is such that the dot product of the
+            # coordinate vector of I0 * beta with bezout_filter is m modulo I0,
+            # then the only possible integral shift is beta - m/I0.
             generator_coords = convert_matrix * (I0 * generator_shift).vector()
             shift = bezout_filter.dot_product(generator_coords) % I0
             shifted_generator = generator_shift - shift / I0
@@ -869,8 +947,9 @@ def all_generators(poly, certify, reduce_poly, precision=5000, verbose = False, 
         
         # add a perturbation to form matrices, at the coordinate corresponding to log(alpha)
         # this helps prevent ill-formed matrices which are degenerate or close to it
-        # since this coefficient must be 1, perturbing here by t can only change a vector's 
-        # norm by up to t, so the enumeration is still sound
+        # since this coefficient must be 1, perturbing this entry by t can only change a 
+        # vector's norm by up to t. originally, we need to enumerate vectors of norm up to
+        # q, so enumerating norm up to q+t with the perturbed matrix is sound.
         t = 1
         perturbation = diagonal_matrix([0] * 9 + [t])
         
