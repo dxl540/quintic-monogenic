@@ -25,7 +25,7 @@ of index 13 instead of 1.
 
 As another example of this code's output, the number field defined by the polynomial
 ```math
-x^5 - x^4 - 10*x^3 + x^2 + 10*x - 4
+x^5 - x^4 - 10x^3 + x^2 + 10x - 4
 ```
 (discriminant $827397$) has
 ```math
@@ -33,7 +33,7 @@ x^5 - x^4 - 10*x^3 + x^2 + 10*x - 4
 ```
 as a monogenerator, with minimal polynomial 
 ```math
-x^5 + 5*x^4 - 28*x^3 + 4*x^2 + 10*x - 3.
+x^5 + 5x^4 - 28x^3 + 4x^2 + 10x - 3.
 ```
 The code returns no other monogenerators (up to negation and rational integer shift).
 
