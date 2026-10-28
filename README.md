@@ -10,10 +10,7 @@ and Györy [2].
 
 ## Current Status
 
-This code is work in progress, and I would describe the fact that it even works at
-all as nothing short of a miracle.
-
-Has been tested on the original example in [1], i.e., the number field with polynomial
+This code has been tested on the original example in [1], i.e., the number field with polynomial
 ```math
 x^5 - 5x^3 + x^2 + 3x - 1,
 ```
@@ -26,39 +23,31 @@ x^5 - 10x^4 + 29x^3 - 28x^2 + 6x + 1,
 which defines the same number field, but the defining generator generates a power basis
 of index 13 instead of 1.
 
-Oh, and as proof that this code works, the number field defined by the polynomial
+As another example of this code's output, the number field defined by the polynomial
 ```math
-x^5 - x^4 - 7x^3 + 4x^2 + 6x + 1
+x^5 - x^4 - 10*x^3 + x^2 + 10*x - 4
 ```
-(discriminant $242773$) has
+(discriminant $827397$) has
 ```math
--\frac{43}2\theta^4 - 8\theta^3 + \frac{279}2\theta^2 + \frac{211}2\theta + \frac{31}2
+\frac 52\theta^4 - \frac 12\theta^3 - 26\theta^2 - \frac{35}2\theta + 16
 ```
 as a monogenerator, with minimal polynomial 
 ```math
-x^5 - 325x^4 - 330x^3 - 118x^2 - 18x - 1.
+x^5 + 5*x^4 - 28*x^3 + 4*x^2 + 10*x - 3.
 ```
-(There are also nicer-looking monogenerators.)
+The code returns no other monogenerators (up to negation and rational integer shift).
 
 ## Known issues
 
-Complex approximations are used throughout instead of working with number fields,
-leading to potential precision issues.
-
-Not particularly readable.
-
-Past issues which are currently being tested:
-
-Enumerating elements of a given norm in a number field can stall indefinitely
-with the current implementation.
-
-PARI stack size overflows.
-
-Division-by-zero errors while sieving.
+Potential precision issues arising from the use of complex approximations.
 
 ## Dependencies
 
 SageMath 3.12.3
+
+## Acknowledgements
+
+I thank Professor Andrew Sutherland, my supervisor for this project, for suggesting the algorithm and for helpful weekly discussions. I also thank the MIT UROP Program for facilitating the wonderful research opportunity, and the Paul E. Grey fund for their generous funding.
 
 ## References
 
